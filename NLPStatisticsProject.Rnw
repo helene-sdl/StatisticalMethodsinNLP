@@ -1,0 +1,421 @@
+\documentclass[12pt, titlepage]{article}
+
+\usepackage[width=14cm, top=4.5cm, bottom=4cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath, amsfonts, amssymb, amsthm}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{framed}
+\usepackage{setspace}
+\onehalfspacing 
+
+% Paragraph formatting
+\setlength{\parskip}{0.8em}
+\setlength{\parindent}{0pt}
+
+%------------- DOCUMENT --------------------
+\begin{document}
+\SweaveOpts{concordance=TRUE}
+
+\begin{titlepage}
+\vspace*{3cm}
+\begin{center}
+\Huge {\bf NLP Project}
+\end{center}
+
+\vspace{1cm} 
+
+\begin{center}
+\Large {Gutenberg \\ \& R}
+\end{center}
+
+\vspace{1cm} 
+
+\begin{center} 
+\Large {Helene Seidl} \\[3pt]  
+\textit{MLT} \\ 
+\textit{helene.seidl@univie.ac.at} \\ [1cm] 
+\today
+\end{center}
+\end{titlepage}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{NLP Project (GutenbergR)}
+% ============================================================
+
+% -------------------- R CODE -------------------------------
+\section {Finding the text}
+For this project, I selected a text using the gutenbergr package by finding an author whose surname was similar to mine ("Seidl"). I chose "Charles Seignobos", whose works included a book of appropriate length. Initially, the book had around 197,000 words.
+
+<<>>=
+library(gutenbergr)
+library(tidytext)
+library(dplyr)
+library(ggplot2)
+
+my_mirror <- "http://www.gutenberg.org/dirs/"
+df <- gutenberg_metadata
+
+unique(df$author)[startsWith(unique(df$author), "Sei")]
+gutenberg_works(author == "Seignobos, Charles" )
+MatPic <- gutenberg_download(29637, mirror = my_mirror)
+MatPic <- MatPic %>% distinct(text, .keep_all = TRUE) 
+length(unique(MatPic$text)) 
+length(MatPic$text)
+@
+
+
+% -------------------- TASK 2 -------------------------------
+\newpage
+\section{Word counts and bigrams}
+
+After  importing the text, I noticed a duplication issue. Every line appeared twice, which artificially doubled the word count. Using the code down below, I cleaned this up by removing the redundant entries to avoid errors in future calculations regarding word frequency. To verify the fix worked properly, I compared the number of unique lines with the total text length before and after (however I couldn't include this in this report since it threw an error that MatPic wasn't found). Once these numbers matched, I knew all duplicates were gone and got a vocabulary size of 9266 unique words and a total of 99226 words.
+
+Something very typical that I discovered was that about half of these words appear only once in the entire text. This reminded me of a classic long-tail distribution pattern you see in natural language ("Zipf's Law"), meaning that a small number of words (like "the," "and," "of") appear very frequently, while a large number of words appear rarely or just once. This pattern is fundamental to how language works, since we have a core set of common words we use constantly and then a vast variety of specialized or occasional words, which is also the case in this book. 
+
+When I moved on to analyzing the bigrams, I ran into a small issue, since I found one row in the bigram count table with a missing (NA) value. To avoid any problems with later calculations, I removed this row. However, this NA value seemed to move around when I reopened the project, somehow. It sometimes it was in row 32, other times it was in row 33 or 34, which was something I had to keep track of.
+
+Looking at the actual word frequencies, the most frequent words were common English stopwords (words like "the," "of," "in," "and," "to") as described above. The most common bigrams followed similar patterns, with phrases like "of the" and "in the" appearing frequently.
+
+<<>>=
+words_MatPic <- unnest_tokens(MatPic,words, text)
+word_count <- count(words_MatPic,words,sort= TRUE)
+
+bigram_MatPic <- unnest_tokens(MatPic,words,text,token= "ngrams", n=2)
+bigram_count<-count(bigram_MatPic,words,sort=TRUE)
+bigram_count<-bigram_count[-34,]
+@
+
+% -------------------- TASK 3 -------------------------------
+\newpage
+\section{Dependence of bigrams}
+
+For task three, I investigated whether certain word pairs appear together more often than random chance would predict. In other words, I checked whether words influence each others occurrence. To this end, I chose the bigram "according to" because it's a well-known collocation in English, but not as “basic” as phrases like “of the”, “in the”, "it is" etc.
+
+I built a contingency table that shows four scenarios:
+
+1.	Both "according" and "to" appear together
+2.	"according" appears but "to" doesn't follow it
+3.	"to" appears but "according" doesn't precede it
+4.	Neither word appears in that position
+
+The contingency table looked like this:
+
+•	"according" followed by "to": 39 times
+
+•	"according" not followed by "to": 11 times
+
+•	"to" without "according" before it: 3,141 times
+
+•	Neither word in those positions: 86,770 times
+
+The chi-square test compares these observed frequencies with what we'd expect if the words were completely independent (appearing together purely by chance). The results were highly significant (p << 0.001), which means there's overwhelming evidence that these words don't occur independently, but they're strongly associated. In other words, when you see "according" in this text, there's a very high probability that "to" follows it. Still, I did get a warning message that the Chi-square approximation may be incorrect, which is I assume due to the very small values 11 & 39 in the contingency table.
+
+The mosaic plot provides a visual representation of this relationship. It shows the deviation between what we observed and what we'd expect under independence. The boxes are sized proportionally to the frequencies, which is why two "boxes" are only thin line. Again, this can be explained by the relatively  big discrepancy of the number of times "according" & "to" appear (together), compared to the rest of the words. 
+
+<<>>=
+bigram_count[startsWith(bigram_count$words,"according to"),]
+bigram_count[startsWith(bigram_count$words,"according"),]
+bigram_count[endsWith(bigram_count$words,"to"),] 
+
+a.t<-bigram_count[startsWith(bigram_count$words, "according to"),]$n
+a.nott<-sum(bigram_count[startsWith(bigram_count$words, "according"),]$n) - a.t
+nota.t<-sum(bigram_count[endsWith(bigram_count$words, "to"),]$n) - a.t
+nota.nott<-sum(bigram_count$n) - a.t - a.nott - nota.t 
+
+freq<-matrix(c(a.t,a.nott,nota.t,nota.nott), ncol =2,byrow=T)
+print
+chisq.test(freq)
+
+@
+\begin{figure}[H]
+\centering
+<<mosaic_plot, fig=TRUE, echo=TRUE, width=8, height=6>>=
+mosaicplot(freq,
+           color = TRUE,
+           main = "Mosaic Plot: 'according' vs 'to'",
+           xlab = "to",
+           ylab = "according")
+@
+\caption{Mosaic plot of 'according' vs 'to'.}
+\end{figure}
+
+
+% -------------------- TASK 4 -------------------------------
+
+\newpage
+\section{Explanation of HypothesisTest/Chi-Square Test}
+
+I'd like to explain Hypothesis testing as an analogy to a courtroom trial/law sector. We start with a "null hypothesis" (H₀), which is the default assumption, like "innocent until proven guilty" in juristic terms. In statistical terms, the null hypothesis usually represents "no effect" or "no relationship." The alternative hypothesis (H₁) is what we're trying to prove. So we are trying to prove that there is an effect or relationship.
+
+The process requires three main ingredients:
+
+1.	A test statistic: This is a number calculated from your data that summarizes the evidence. Different tests use different statistics.
+
+2.	A reference distribution: This tells us what values the test statistic should have if the null hypothesis is true. It's the baseline for comparison
+
+3.	A p-value: This quantifies how extreme or unusual our observed data is, assuming the null hypothesis is true. A small p-value means our data would be very unlikely if H₀ were true.
+
+The chi-square test specifically checks whether two categorical variables are independent. It works by:
+
+1.	Creating a contingency table of observed frequencies (what actually happened in the data)
+
+2.	Calculating expected frequencies (what we'd see if the variables were independent)
+
+3.	Measuring the difference between observed and expected values
+
+4.	Large differences lead to a large chi-square statistic, which gives a small p-value, leading us to reject the null hypothesis
+
+The "innocent until proven guilty" analogy is pretty useful here. Just as a defendant is presumed innocent unless evidence is strong enough to overturn that presumption, we maintain the null hypothesis unless our data provides compelling evidence against it. We need sufficient evidence to overturn the default position, which in the judicial system is crucial, as well as in Hypothesis testing.
+
+% -------------------- TASK 5 -------------------------------
+\newpage
+\section{Entropy of 1000-word segments}
+
+I divided the text into consecutive chunks of 1,000 word strings each and calculated the entropy for every chunk the character level. It quantifies the unpredictability of characters in the text: higher values indicate more variation in the sequence of characters, while lower values suggest more repetition. The results show moderate variation but stay within a fairly consistent range, suggesting the text maintains similar structural complexity throughout.
+
+The plot below illustrates these patterns. Entropy values fluctuate slightly across the first 80\% of segments, while the last 20\% show some spikes and drops, possibly caused by the introduction of new terms, including French words in the final quarter of the text.
+
+As we can see towards the end of this report, this difference of the last section compared to the others is further illustrated by the Tf-Idf bigram/unigram analysis. My explanation would be that French words seem to be introduced in the last quarter of the book which is the cause of these spikes/drops. 
+
+<<entropy_plot, fig.width=8, fig.height=4>>=
+entropy <- c()
+for(i in 0:99) {
+  entr <- words_MatPic[(i*1000+1):(i*1000+1000), 2]
+  char <- unnest_tokens(entr, token, words, token="characters")
+  df.char <- as.data.frame(count(char, token, sort=TRUE))
+  df.char$relfreq <- df.char$n / sum(df.char$n)
+  df.char$ent <- df.char$relfreq * log2(df.char$relfreq)
+  entropy <- c(entropy, -sum(df.char$ent))
+}
+@
+\newpage
+\begin{figure}[ht]
+\centering
+
+<<entropy_plot, fig=TRUE, echo=TRUE,fig.width=10, fig.height=4,out.width='0.8\\textwidth'>>=
+plot(entropy, type='b', pch=19, col='steelblue',
+     xlab='Segment (1000 words each)',
+     ylab='Entropy',
+     main='Entropy per Text Segment')
+@
+
+\caption{Entropy across 1000-word segments.}
+\end{figure}
+
+% -------------------- TASK 6 -------------------------------
+\newpage
+\section{Explanation of Entropy}
+
+Entropy quantifies unpredictability or uncertainty. At the character level, it measures how difficult it is to predict the next character in a sequence. At word level, it would measure the difficulty of predicting the next word.
+
+Here's a concrete example to illustrate the explanation: 
+
+•	Low entropy: "The cat sat by the window" (predictable, common words)
+
+•	High entropy: "The ramifications and consequences of this meticulous planning were unforeseeable." (less predictable, varied vocabulary)
+
+High entropy indicates greater lexical variety. We'd have a hard time predicting what comes next. Low entropy means the text is more predictable and repetitive. When applied to a corpus, entropy tells us about the vocabulary richness and diversity. Texts with technical jargon, varied topics or creative language tend to have higher entropy. Formulaic or repetitive texts have lower entropy.
+
+% -------------------- TASK 7 -------------------------------
+\newpage
+\section{Computing 95\% confidence interval}
+
+I calculated a 95\% confidence interval for the mean character-level entropy across all 1000-word segments using a one-sample t-test. This interval provides a range of plausible values for the true average entropy of the text.
+The mean entropy of the segments is 4.1687 bits per character, and the t-test indicates that this difference is statistically significant (t = -2.73, p = 0.007). The 95\% confidence interval for the mean entropy is 4.146 to 4.191 bits per character, indicating where the true mean is likely to lie. The histogram illustrates the distribution of entropy values across all segments, with the mean marked in green and the confidence interval bounds in orange, providing a visual representation of the variability and the range where the true mean is expected. 
+
+I also computed the confidence interval a different way (ttestresult...) but I wanted to visualize it as well, which is why I also had to manually compute the bounds and the mean as can be seen below.
+<<>>=
+t_test_result <- t.test(entropy, mu = 4.2) 
+t_test_result
+@
+
+\newpage
+\begin{figure}[H]
+\centering
+<<entropy_CI_plot, fig=TRUE, echo=TRUE, fig.width=8, fig.height=4>>=
+mean_entropy <- mean(entropy)
+std_dev_entropy <- sd(entropy)
+sample_size <- length(entropy)
+std_error <- std_dev_entropy / sqrt(sample_size)
+t_value <- qt(0.975, df = sample_size - 1)
+lower <- mean_entropy - t_value * std_error
+upper <- mean_entropy + t_value * std_error
+hist(entropy, breaks = 25,
+     col = "blue",
+     main = "95% Confidence Interval",
+     xlab = "Entropy")
+abline(v = mean_entropy, col = "green", lwd = 2)
+abline(v = lower, col = "orange", lty = 2)
+abline(v = upper, col = "orange", lty = 2)
+@
+\caption{95 Percent Confidence Interval of Entropy.}
+\end{figure}
+
+
+% -------------------- TASK 8 -------------------------------
+
+\newpage
+\section{Confidence intervals in general}
+
+A confidence interval gives us a range of plausible values for a population parameter we're trying to estimate (like average entropy). It accounts for the uncertainty inherent in working with samples rather than complete populations.
+
+A 95\% confidence interval doesn't mean there's a 95\% chance the true value is in our specific calculated range. The true parameter value either is or isn't in our interval.There's no probability about it once we've calculated the interval.
+Instead, the "95\%" refers to the long-term "results" of the method. If we repeated this entire process many times (collecting new samples, calculating new intervals), approximately 95\% of those intervals would contain the true parameter value. It's about the reliability and success rate of the procedure itself, not about the probability for one specific interval.
+
+To put it briefly, if you use a measuring tool that's accurate 95\% of the time, any single measurement either is or isn't correct, but you know that in the long run, 95 out of 100 measurements will be accurate.
+
+% -------------------- TASK 9 -------------------------------
+\newpage
+\section{Naive Bayes Classification}
+
+For the final task, I split the text into four equal sections and treated each section as a separate class or category. Then I used the Naive Bayes classifier to predict which section a given sentence came from based purely on its word content.
+Here's how the Naive Bayes approach in general works:
+
+Step 1: We calculate word frequency distributions for each section. This tells us which words are common in each part of the text.
+
+Step 2: For a test sentence, we calculate the probability it belongs to each section based on the words it contains. This uses Bayes' theorem, which relates conditional probabilities.
+
+Step 3: We then assume each word's occurrence is independent of the others, which is where the "naive" assumption comes into play. In reality, words aren't independent (if you see "according," you're more likely to see "to"), but this simplification surprisingly works quite well in practice.
+
+Step 4: Multiply the probabilities of seeing each word in each section (adding logarithms in practice to avoid numerical issues), and pick the section with the highest probability.
+
+The implementation shows this process step by step. Despite the oversimplified independence assumption, the NB classifier successfully identified which section was most likely (S1) to contain the test sentence ("It will be a positive gain to have the road cleared of a mass of rubbish that has hindered the advance of knowledge") based purely on its vocabulary patterns. So, even simple probabilistic models can capture meaningful patterns in text data.
+
+<<>>=
+all_words <- unnest_tokens(MatPic, word, text)
+N <- nrow(all_words)
+q <- 24806
+
+words1 <- all_words[1:q, ]
+words2 <- all_words[(q+1):(2*q), ]
+words3 <- all_words[(2*q+1):(3*q), ]
+words4 <- all_words[(3*q+1):N, ]
+
+wc1 <- count(words1, word, sort=TRUE)
+wc2 <- count(words2, word, sort=TRUE)
+wc3 <- count(words3, word, sort=TRUE)
+wc4 <- count(words4, word, sort=TRUE)
+
+sentence <- "It will be a positive gain to have the road cleared of 
+a mass of rubbish that has hindered the advance of knowledge"
+sentence_words <- tolower(strsplit(sentence, " ")[[1]])
+
+f1 <- setNames(wc1$n, wc1$word)
+f2 <- setNames(wc2$n, wc2$word)
+f3 <- setNames(wc3$n, wc3$word)
+f4 <- setNames(wc4$n, wc4$word)
+
+N1 <- sum(wc1$n)
+N2 <- sum(wc2$n)
+N3 <- sum(wc3$n)
+N4 <- sum(wc4$n)
+
+V <- 10000
+
+p1 <- -sum(log((f1[sentence_words] + 1) / (N1 + V)), na.rm=TRUE)
+p2 <- -sum(log((f2[sentence_words] + 1) / (N2 + V)), na.rm=TRUE)
+p3 <- -sum(log((f3[sentence_words] + 1) / (N3 + V)), na.rm=TRUE)
+p4 <- -sum(log((f4[sentence_words] + 1) / (N4 + V)), na.rm=TRUE)
+
+scores <- c(S1=p1, S2=p2, S3=p3, S4=p4)
+scores
+which.max(scores)
+@
+
+\newpage
+\section{TF-IDF Analysis}
+
+To better understand the vocabulary in the text (as well as the spikes and drops in the Entropy), I analyzed the words in each of the four sections further using TF-IDF. TF-IDF down-weights words that appear frequently across all sections (like stopwords) and up-weights words that are unique or particularly characteristic of a specific section. This allowed me to identify words that "define" the content of each section.
+
+The results can be seen down below. What I find interesting/surprising is that S4 seems to contain "rarer" words compared to the other sections, as well as some unusual bigrams (or rather possibly French bigrams, which maybe that can be attributed to it being an older text, but could explain the Entropy spikes/drops, which would show another link between word uniqueness and unpredictability). 
+
+<<>>=
+all_words <- MatPic %>%
+  unnest_tokens(word, text) %>%
+  filter(!is.na(word) & word != "")
+N <- nrow(all_words)
+q <- floor(N / 4)
+all_words$section <- cut(1:N, breaks = c(0, q, 2*q, 3*q, N), labels = paste0("S",1:4))
+
+# Count words and compute TF-IDF
+tfidf_words <- all_words %>%
+  count(section, word, name = "n") %>%
+  bind_tf_idf(word, section, n)
+
+# Inspect top 10 distinctive words per section
+top_words <- tfidf_words %>%
+  group_by(section) %>%
+  slice_max(tf_idf, n = 10) %>%
+  arrange(section, desc(tf_idf))
+
+top_words
+@
+
+\begin{figure}[H]
+\centering
+
+<<tfidf_words_plot, fig=TRUE, echo=TRUE,fig.width=10, fig.height=6,out.width='0.8\\textwidth'>>=
+tfidf_words %>%
+  group_by(section) %>%
+  slice_max(tf_idf, n=10) %>%
+  ggplot(aes(x=reorder(word, tf_idf), y=tf_idf, fill=section)) +
+  geom_col(show.legend=FALSE) +
+  facet_wrap(~section, scales="free") +
+  coord_flip() +
+  labs(x="Word", y="TF-IDF", title="Top 10 Distinctive Words per Section")
+@
+
+\caption{Top 10 distinctive words per section based on TF-IDF.}
+\end{figure}
+
+
+
+<<>>=
+bigrams <- MatPic %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2) %>%
+  filter(!is.na(bigram) & bigram != "")
+
+N_bi <- nrow(bigrams)
+q_bi <- floor(N_bi / 4)
+bigrams$section <- cut(1:N_bi, breaks = c(0, q_bi, 2*q_bi, 3*q_bi, N_bi),
+                       labels = paste0("S",1:4))
+
+# Count bigrams and compute TF-IDF
+bigram_tfidf <- bigrams %>%
+  count(section, bigram, name = "n") %>%
+  bind_tf_idf(bigram, section, n)
+
+# Inspect top 10 distinctive bigrams per section
+top_bigrams <- bigram_tfidf %>%
+  group_by(section) %>%
+  slice_max(tf_idf, n = 10) %>%
+  arrange(section, desc(tf_idf))
+
+top_bigrams
+@ 
+
+\begin{figure}[H]
+\centering
+
+<<tfidf_bigrams_plot, fig=TRUE, echo=TRUE, fig.width=10, fig.height=6,out.width='0.8\\textwidth'>>=
+bigram_tfidf %>%
+  group_by(section) %>%
+  slice_max(tf_idf, n=10) %>%
+  ggplot(aes(x=reorder(bigram, tf_idf), y=tf_idf, fill=section)) +
+  geom_col(show.legend=FALSE) +
+  facet_wrap(~section, scales="free") +
+  coord_flip() +
+  labs(x="Bigram", y="TF-IDF", title="Top 10 Distinctive Bigrams per Section")
+@
+
+\caption{Top 10 distinctive bigrams per section based on TF-IDF.}
+\end{figure}
+
+\end{document} 
+
