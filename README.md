@@ -2,19 +2,12 @@
 
 **Author:** Helene Seidl (MLT, helene.seidl@univie.ac.at)
 
-NLP and statistical analysis of a Project Gutenberg text (*Charles Seignobos*, ID: 29637), written as an R Sweave (`.Rnw`) document compiled to PDF.
+NLP and statistical analysis of a Project Gutenberg text (*Charles Seignobos*, ID: 29637), written as an R Sweave (`.Rnw`) document.
 
 ## Requirements
 
 R packages: `gutenbergr`, `tidytext`, `dplyr`, `ggplot2`  
-Requires an internet connection to download the text at runtime.
 
-## Compile
-
-```r
-Sweave("NLPStatisticsProject.Rnw")
-# then: pdflatex NLPStatisticsProject.tex
-```
 
 ## Contents
 
